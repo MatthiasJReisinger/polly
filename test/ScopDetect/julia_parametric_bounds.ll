@@ -3,8 +3,8 @@
 ; This test case contains the LLVM IR that Julia has emitted for the following
 ; code snippet:
 ;
-; function foo(A,l,u)
-;     for i=l:u
+; function foo(A::Array{Float32,1},m::Int64,n::Int64)
+;     for i=m:n
 ;         A[i] = 0
 ;     end
 ; end
