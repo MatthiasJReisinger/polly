@@ -2253,6 +2253,12 @@ bool Scop::buildDomains(Region *R, DominatorTree &DT, LoopInfo &LI) {
 // to analyze the memory accesses of the nonaffine/boxed loops.
 static Loop *getFirstNonBoxedLoopFor(BasicBlock *BB, LoopInfo &LI,
                                      const BoxedLoopsSetTy &BoxedLoops) {
+  if (isa<UnreachableInst>(BB->getTerminator())) {
+    auto PI = pred_begin(BB);
+    assert(PI != pred_end(BB));
+    BB = *PI;
+  }
+
   auto *L = LI.getLoopFor(BB);
   while (BoxedLoops.count(L))
     L = L->getParentLoop();
