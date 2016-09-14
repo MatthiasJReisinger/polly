@@ -4112,15 +4112,6 @@ mapToDimension(__isl_take isl_union_set *USet, int N) {
   return isl_multi_union_pw_aff_from_union_pw_multi_aff(Data.Res);
 }
 
-static bool isUnreachableBlock(RegionNode *RN) {
-  if (!RN->isSubRegion()) {
-    auto *BB = RN->getNodeAs<BasicBlock>();
-    auto *Term = BB->getTerminator();
-    return isa<UnreachableInst>(Term);
-  }
-  return false;
-}
-
 void Scop::addScopStmt(BasicBlock *BB, Region *R) {
   if (BB) {
     Stmts.emplace_back(*this, *BB);
@@ -4207,7 +4198,7 @@ void Scop::buildSchedule(Region *R, LoopStackTy &LoopStack, LoopInfo &LI) {
       L = OuterScopLoop;
 
     Loop *LastLoop = LoopStack.back().L;
-    if (LastLoop != L && !isUnreachableBlock(RN)) {
+    if (LastLoop != L) {
       if (LastLoop && !LastLoop->contains(L)) {
         LastRNWaiting = true;
         DelayList.push_back(RN);
@@ -4232,8 +4223,7 @@ void Scop::buildSchedule(RegionNode *RN, LoopStackTy &LoopStack, LoopInfo &LI) {
   }
 
   auto &LoopData = LoopStack.back();
-  if (!isUnreachableBlock(RN))
-    LoopData.NumBlocksProcessed += getNumBlocksInRegionNode(RN);
+  LoopData.NumBlocksProcessed += getNumBlocksInRegionNode(RN);
 
   if (auto *Stmt = getStmtFor(RN)) {
     auto *UDomain = isl_union_set_from_set(Stmt->getDomain());

@@ -1011,15 +1011,59 @@ bool ScopDetection::isValidInstruction(Instruction &Inst,
   return invalid<ReportUnknownInst>(Context, /*Assert=*/true, &Inst);
 }
 
-/// Check whether @p L has exiting blocks.
+/// Check whether @p L has valid exit blocks.
 ///
-/// @param L The loop of interest
+/// Loops that contain part but not all of the blocks of a region cannot be
+/// handled by the schedule generation. Such loop constructs can happen
+/// because a region can contain BBs that have no path to the exit block
+/// (Infinite loops, UnreachableInst), but such blocks are never part of a
+/// loop.
 ///
-/// @return True if the loop has exiting blocks, false otherwise.
-static bool hasExitingBlocks(Loop *L) {
-  SmallVector<BasicBlock *, 4> ExitingBlocks;
-  L->getExitingBlocks(ExitingBlocks);
-  return !ExitingBlocks.empty();
+/// _______________
+/// | Loop Header | <-----------.
+/// ---------------             |
+///        |                    |
+/// _______________       ______________
+/// | RegionEntry |-----> | RegionExit |----->
+/// ---------------       --------------
+///        |
+/// _______________
+/// | EndlessLoop | <--.
+/// ---------------    |
+///       |            |
+///       \------------/
+///
+/// In the example above, the loop (LoopHeader,RegionEntry,RegionExit) is
+/// neither entirely contained in the region RegionEntry->RegionExit
+/// (containing RegionEntry,EndlessLoop) nor is the region entirely contained
+/// in the loop.
+/// The block EndlessLoop is contained in the region because Region::contains
+/// tests whether it is not dominated by RegionExit. This is probably to not
+/// having to query the PostdominatorTree. Instead of an endless loop, a dead
+/// end can also be formed by an UnreachableInst.
+///
+/// TODO Explain when unreachables are actually allowed.
+///
+/// @param L The loop of interest.
+///
+/// @return True if the loop has valid exit blocks, false otherwise.
+bool ScopDetection::hasValidExitBlocks(Loop *L,
+                                       DetectionContext &Context) const {
+  SmallVector<BasicBlock *, 4> ExitBlocks;
+  L->getExitBlocks(ExitBlocks);
+
+  if (ExitBlocks.empty())
+    invalid<ReportLoopHasNoExit>(Context, /*Assert=*/true, L);
+
+  for (BasicBlock *ExitBB : ExitBlocks) {
+    auto *Term = ExitBB->getTerminator();
+    Region *R = RI->getRegionFor(ExitBB);
+    BasicBlock *EntryBB = R->getEntry();
+    if (L->contains(EntryBB) && !R->contains(L) && !isa<UnreachableInst>(Term))
+      return false; // TODO Use appropriate RejectReason here
+  }
+
+  return true;
 }
 
 bool ScopDetection::canUseISLTripCount(Loop *L,
@@ -1039,37 +1083,8 @@ bool ScopDetection::canUseISLTripCount(Loop *L,
 }
 
 bool ScopDetection::isValidLoop(Loop *L, DetectionContext &Context) const {
-  // Loops that contain part but not all of the blocks of a region cannot be
-  // handled by the schedule generation. Such loop constructs can happen
-  // because a region can contain BBs that have no path to the exit block
-  // (Infinite loops, UnreachableInst), but such blocks are never part of a
-  // loop.
-  //
-  // _______________
-  // | Loop Header | <-----------.
-  // ---------------             |
-  //        |                    |
-  // _______________       ______________
-  // | RegionEntry |-----> | RegionExit |----->
-  // ---------------       --------------
-  //        |
-  // _______________
-  // | EndlessLoop | <--.
-  // ---------------    |
-  //       |            |
-  //       \------------/
-  //
-  // In the example above, the loop (LoopHeader,RegionEntry,RegionExit) is
-  // neither entirely contained in the region RegionEntry->RegionExit
-  // (containing RegionEntry,EndlessLoop) nor is the region entirely contained
-  // in the loop.
-  // The block EndlessLoop is contained in the region because Region::contains
-  // tests whether it is not dominated by RegionExit. This is probably to not
-  // having to query the PostdominatorTree. Instead of an endless loop, a dead
-  // end can also be formed by an UnreachableInst. This case is already caught
-  // by isErrorBlock(). We hence only have to reject endless loops here.
-  if (!hasExitingBlocks(L))
-    return invalid<ReportLoopHasNoExit>(Context, /*Assert=*/true, L);
+  if (!hasValidExitBlocks(L, Context))
+    return false;
 
   if (canUseISLTripCount(L, Context))
     return true;

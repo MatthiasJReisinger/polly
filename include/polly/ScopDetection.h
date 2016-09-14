@@ -474,6 +474,8 @@ private:
   /// @note An OpenMP subfunction will be marked as invalid.
   bool isValidFunction(llvm::Function &F);
 
+  bool hasValidExitBlocks(Loop *L, DetectionContext &Context) const;
+
   /// Can ISL compute the trip count of a loop.
   ///
   /// @param L The loop to check.
